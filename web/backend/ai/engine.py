@@ -23,6 +23,8 @@ from ai.detector_fire import FireDetector
 from ai.detector_weapon import WeaponDetector
 from ai.tracker import ObjectTracker
 from ai.alert_fusion import AlertFusionEngine, AlertEvent
+from blockchain.ledger import blockchain_ledger
+from blockchain.ipfs import ipfs_service
 
 logger = logging.getLogger("bsc.engine")
 
@@ -140,6 +142,10 @@ class DetectionEngine:
             daemon=True,
         )
         self._thread.start()
+        
+        # Start Blockchain Ledger Worker
+        blockchain_ledger.start()
+        
         logger.info("Detection engine started")
 
     def stop(self):
@@ -149,6 +155,11 @@ class DetectionEngine:
             self._thread.join(timeout=10)
             self._thread = None
         self.pipeline.stop_all()
+        
+        # Stop Blockchain Ledger Worker
+        if self._loop:
+            asyncio.run_coroutine_threadsafe(blockchain_ledger.stop(), self._loop)
+            
         logger.info("Detection engine stopped")
 
     def add_camera(
@@ -248,41 +259,45 @@ class DetectionEngine:
     # ─── Detection Loop ───────────────────────────────────────────────────────
 
     def _detection_loop(self):
-        """Main detection loop — runs in background thread."""
-        logger.info("Detection loop started")
-        frame_interval = 1.0 / ai_config.DETECTION_FPS
-
-        while self._running:
-            camera_ids = self.pipeline.get_camera_ids()
-            if not camera_ids:
-                time.sleep(0.5)
-                continue
-
-            for camera_id in camera_ids:
-                if not self._running:
-                    break
-
-                t0 = time.time()
-                frame = self.pipeline.get_frame(camera_id)
-                if frame is None:
+        """Main detection loop — processes cameras in parallel for low latency."""
+        from concurrent.futures import ThreadPoolExecutor
+        logger.info("Parallel detection engine started (4-camera optimized)")
+        
+        # Optimized for Intel Arc multi-stream throughput
+        max_workers = ai_config.MAX_CAMERAS 
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            while self._running:
+                camera_ids = self.pipeline.get_camera_ids()
+                if not camera_ids:
+                    time.sleep(0.5)
                     continue
 
-                try:
-                    self._process_frame(camera_id, frame)
-                except Exception as e:
-                    logger.error(f"[{camera_id}] Processing error: {e}")
+                loop_start = time.time()
+                
+                # Submit all cameras to the pool for parallel processing
+                futures = []
+                for camera_id in camera_ids:
+                    frame = self.pipeline.get_frame(camera_id)
+                    if frame is not None:
+                        futures.append(executor.submit(self._process_frame, camera_id, frame))
+                
+                # Wait for this batch to complete to prevent queue buildup
+                for future in futures:
+                    try:
+                        future.result(timeout=1.0)
+                    except Exception as e:
+                        logger.error(f"Parallel process error: {e}")
 
-                # FPS tracking
-                elapsed = time.time() - t0
-                self._update_fps(camera_id, elapsed)
-
-                # Pace the loop
-                sleep_time = frame_interval - elapsed
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
+                # Maintain target FPS across the system
+                elapsed = time.time() - loop_start
+                target_interval = 1.0 / ai_config.DETECTION_FPS
+                if elapsed < target_interval:
+                    time.sleep(target_interval - elapsed)
 
     def _process_frame(self, camera_id: str, frame: np.ndarray):
         """Process a single frame through all detectors."""
+        t0 = time.time()
         with self._lock:
             state = self._camera_states.get(camera_id)
             if not state:
@@ -360,7 +375,8 @@ class DetectionEngine:
 
         if alert:
             self.total_alerts += 1
-            self._dispatch_alert(alert)
+            # Pass the raw frame for evidence capture if needed
+            self._dispatch_alert(alert, frame)
 
         # ── 9. Broadcast detection events ──
         self._broadcast_events(camera_id, state)
@@ -491,15 +507,62 @@ class DetectionEngine:
             if state:
                 state.detection_fps = fps
 
-    def _dispatch_alert(self, alert: AlertEvent):
-        """Dispatch alert to the async callback (FastAPI SSE system)."""
+    def _dispatch_alert(self, alert: AlertEvent, frame: Optional[np.ndarray] = None):
+        """Dispatch alert to the async callback (FastAPI SSE system) and Blockchain."""
         if self._alert_callback and self._loop:
             try:
+                # 1. Dispatch to Dashboard (Live UI)
                 asyncio.run_coroutine_threadsafe(
                     self._alert_callback(alert), self._loop
                 )
+                
+                # 2. Forensic Evidence Capture (IPFS)
+                # Only capture snapshots for significant threats to optimize storage/bandwidth
+                snapshot_cid = None
+                if alert.severity in ("critical", "emergency", "high") and frame is not None:
+                    # Encode to JPEG for storage
+                    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                    frame_bytes = buffer.tobytes()
+                    
+                    # We wrap the async IPFS call to run in the background
+                    async def capture_evidence():
+                        cid = await ipfs_service.store_evidence(frame_bytes, alert.camera_id)
+                        
+                        # 3. Log to Private Blockchain with Evidence Link
+                        active_detections = [cat for cat, count in alert.detections.items() if count > 0 or count is True]
+                        await blockchain_ledger.log_detection(
+                            camera_id=alert.camera_id,
+                            detections=active_detections,
+                            confidence=alert.confidence,
+                            alert_level=alert.severity,
+                            metadata={
+                                "sector": alert.sector,
+                                "threat": alert.threat,
+                                "description": alert.description
+                            },
+                            snapshot_cid=cid
+                        )
+                    
+                    asyncio.run_coroutine_threadsafe(capture_evidence(), self._loop)
+                else:
+                    # Log to Blockchain without snapshot for lower severity
+                    active_detections = [cat for cat, count in alert.detections.items() if count > 0 or count is True]
+                    asyncio.run_coroutine_threadsafe(
+                        blockchain_ledger.log_detection(
+                            camera_id=alert.camera_id,
+                            detections=active_detections,
+                            confidence=alert.confidence,
+                            alert_level=alert.severity,
+                            metadata={
+                                "sector": alert.sector,
+                                "threat": alert.threat,
+                                "description": alert.description
+                            }
+                        ), 
+                        self._loop
+                    )
             except Exception as e:
-                logger.error(f"Alert dispatch error: {e}")
+                logger.error(f"Alert dispatch/blockchain error: {e}")
 
     def _broadcast_events(self, camera_id: str, state: CameraDetectionState):
         """Broadcast detection events to subscribers."""

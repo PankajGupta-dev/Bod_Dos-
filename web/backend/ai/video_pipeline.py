@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Optional, Dict
 
 from ai.config import ai_config
+from security.manager import encryption_manager
 
 logger = logging.getLogger("bsc.video_pipeline")
 
@@ -33,9 +34,10 @@ class CameraCapture:
     Continuously reads frames and stores the latest one.
     """
 
-    def __init__(self, camera_id: str, url: str):
+    def __init__(self, camera_id: str, url: str, is_encrypted: bool = False):
         self.camera_id = camera_id
         self.url = url
+        self.is_encrypted = is_encrypted
         self._lock = threading.Lock()
         self._frame: Optional[np.ndarray] = None
         self._running = False
@@ -71,6 +73,34 @@ class CameraCapture:
         with self._lock:
             return self._frame.copy() if self._frame is not None else None
 
+    def push_secure_frame(self, encrypted_data: bytes):
+        """
+        Push an AES-256-GCM encrypted frame into the pipeline.
+        Decodes and verifies integrity immediately.
+        """
+        if not self.is_encrypted:
+            logger.warning(f"[{self.camera_id}] Ignoring secure push for unencrypted camera.")
+            return
+
+        try:
+            # 1. Decrypt (Verifies Tag)
+            raw_jpeg = encryption_manager.decrypt_frame(encrypted_data)
+            
+            # 2. Decode JPEG
+            nparr = np.frombuffer(raw_jpeg, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if frame is not None:
+                with self._lock:
+                    self._frame = frame
+                    self._status.connected = True
+                    self._status.frame_count += 1
+                    self._status.last_frame_time = time.time()
+                    self._status.error = None
+                self._fps_counter.tick()
+        except Exception as e:
+            logger.error(f"[{self.camera_id}] Secure push failed: {e}")
+
     def get_status(self) -> CameraStatus:
         """Get current camera status."""
         with self._lock:
@@ -103,6 +133,11 @@ class CameraCapture:
                     continue
 
                 while self._running and self._cap and self._cap.isOpened():
+                    # For network streams, the buffer can accumulate lag. 
+                    # We grab all available frames but only retrieve the latest one.
+                    if self.url.startswith(('rtsp', 'http')):
+                        self._cap.grab() # Clear the internal buffer
+                    
                     ret, frame = self._cap.read()
                     if not ret:
                         with self._lock:
@@ -120,8 +155,6 @@ class CameraCapture:
 
                     self._fps_counter.tick()
 
-                    # Small sleep to prevent CPU spinning
-                    time.sleep(0.01)
 
             except Exception as e:
                 logger.error(f"[{self.camera_id}] Capture error: {e}")

@@ -7,7 +7,7 @@ import cv2
 from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse
 
-router = APIRouter(prefix="/api/cameras", tags=["cameras"])
+router = APIRouter(tags=["cameras"])
 
 async def frame_generator(url: str):
     """

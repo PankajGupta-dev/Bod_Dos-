@@ -27,7 +27,7 @@ from ai.engine import detection_engine
 from ai.config import ai_config
 
 logger = logging.getLogger("bsc.detection_router")
-router = APIRouter(prefix="/api/detection", tags=["detection"])
+router = APIRouter(tags=["detection"])
 
 # ─── WebSocket subscribers ────────────────────────────────────────────────────
 _ws_clients: list[WebSocket] = []

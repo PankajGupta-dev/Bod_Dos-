@@ -19,7 +19,7 @@ from database import get_session, Alert
 from dependencies import get_current_operator
 from schemas import AlertCreate, AlertRead, AcknowledgeRequest
 
-router = APIRouter(prefix="/api/alerts", tags=["alerts"])
+router = APIRouter(tags=["alerts"])
 
 # ─── In-memory SSE subscriber queues ─────────────────────────────────────────
 _subscribers: list[asyncio.Queue] = []

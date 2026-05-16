@@ -54,9 +54,9 @@ class AIConfig:
 
     # ── Engine Settings ───────────────────────────────────────────────────────
     MAX_CAMERAS: int = 4
-    DETECTION_FPS: float = 8.0            # Target detection FPS per camera
-    FRAME_SKIP: int = 3                   # Process every Nth frame
-    JPEG_QUALITY: int = 80
+    DETECTION_FPS: float = 6.0            # Target detection FPS per camera
+    FRAME_SKIP: int = 4                   # Process every Nth frame
+    JPEG_QUALITY: int = 70
     ANNOTATED_FRAME_BUFFER: int = 2
 
     # ── Alert Settings ────────────────────────────────────────────────────────

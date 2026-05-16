@@ -5,7 +5,7 @@ import CameraGrid from './CameraGrid';
 import AlertSystem from './AlertSystem';
 import MapSection from './MapSection';
 import DetectionPanel from './DetectionPanel';
-import { fetchAlerts, createAlert, subscribeAlerts, clearToken, fetchSettings, updateSettings, fetchStatus } from '../api';
+import { fetchAlerts, createAlert, subscribeAlerts, clearToken, fetchSettings, updateSettings, fetchStatus, subscribeDetections } from '../api';
 
 const Dashboard = ({ session, onLogout }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -15,10 +15,17 @@ const Dashboard = ({ session, onLogout }) => {
   const [resolvedAlerts, setResolvedAlerts] = useState(new Set());
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
   const [currentAlert, setCurrentAlert] = useState(null);
-  const [systemHealth, setSystemHealth] = useState({
-    drones_online: 12,
-    sat_link: 'SECURE',
-    power_level: 98,
+  const [systemHealth, setSystemHealth] = useState({ drones_online: 0, sat_link: 'OFFLINE', power_level: 0 });
+  const shownAlertsRef = useRef(new Set());
+
+  // AI Persistence State
+  const [aiCameras, setAiCameras] = useState({}); // { camId: true/false }
+  const [aiDetections, setAiDetections] = useState({}); // { camName: {...} }
+  const [streamIps, setStreamIps] = useState({
+    1: 'http://10.91.115.108:8080/video',
+    2: 'rtsp://10.0.0.1/stream1',
+    3: 'rtsp://10.0.0.1/stream1',
+    4: 'rtsp://10.0.0.1/stream1',
   });
 
   const toggleResolved = (id) =>
@@ -50,13 +57,29 @@ const Dashboard = ({ session, onLogout }) => {
       (alert) => {
         const normalised = { ...alert, type: alert.alert_type, lat: String(alert.lat), lng: String(alert.lng) };
         playBeep();
-        setCurrentAlert(normalised);
-        setIsAlertModalOpen(true);
+        
+        // One-time popup logic: Only show modal if this specific alert ID hasn't been popped yet
+        if (!shownAlertsRef.current.has(alert.id)) {
+          setCurrentAlert(normalised);
+          setIsAlertModalOpen(true);
+          shownAlertsRef.current.add(alert.id);
+        }
+        
         setAlerts(prev => [normalised, ...prev].slice(0, 50));
       },
       () => console.warn('BSC alert stream closed — reconnect manually'),
     );
 
+    return unsub;
+  }, []);
+
+  // ── AI Detection Subscription (Persistent) ──────────────────────────
+  useEffect(() => {
+    const unsub = subscribeDetections((msg) => {
+      if (msg.type === 'detections' && msg.data) {
+        setAiDetections(msg.data);
+      }
+    });
     return unsub;
   }, []);
 
@@ -105,8 +128,13 @@ const Dashboard = ({ session, onLogout }) => {
       // Fallback: show locally if backend is down
       const local = { ...body, id: Date.now(), timestamp: new Date().toISOString(), type: body.alert_type, lat: String(body.lat), lng: String(body.lng) };
       playBeep();
-      setCurrentAlert(local);
-      setIsAlertModalOpen(true);
+      
+      if (!shownAlertsRef.current.has(local.id)) {
+        setCurrentAlert(local);
+        setIsAlertModalOpen(true);
+        shownAlertsRef.current.add(local.id);
+      }
+      
       setAlerts(prev => [local, ...prev].slice(0, 50));
     }
   };
@@ -173,8 +201,8 @@ const Dashboard = ({ session, onLogout }) => {
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-xs text-gray-400">SAT LINK</span>
-                <span className={`font-bold flex items-center gap-1 ${systemHealth.sat_link === 'SECURE' ? 'text-military-green' : 'text-military-red'}`}>
-                  {systemHealth.sat_link === 'SECURE' && <span className="w-2 h-2 rounded-full bg-military-green animate-pulse"></span>}
+                <span className={`font-bold flex items-center gap-1 ${['SECURE', 'ONLINE'].includes(systemHealth.sat_link) ? 'text-military-green' : 'text-military-red'}`}>
+                  {['SECURE', 'ONLINE'].includes(systemHealth.sat_link) && <span className="w-2 h-2 rounded-full bg-military-green animate-pulse"></span>}
                   {systemHealth.sat_link}
                 </span>
               </div>
@@ -252,10 +280,18 @@ const Dashboard = ({ session, onLogout }) => {
 
         {/* Center Main Panel (60%) */}
         <main className="flex-1 w-[60%] flex flex-col relative z-0 overflow-hidden">
-          {activeTab === 'cameras' && <CameraGrid />}
+          {activeTab === 'cameras' && (
+            <CameraGrid 
+              aiCameras={aiCameras} 
+              setAiCameras={setAiCameras} 
+              aiDetections={aiDetections}
+              streamIps={streamIps}
+              setStreamIps={setStreamIps}
+            />
+          )}
           {activeTab === 'map' && <MapSection mapCenter={mapCenter} resolvedAlerts={resolvedAlerts} />}
           {activeTab === 'alert-history' && <AlertHistoryPanel alerts={alerts} resolvedAlerts={resolvedAlerts} toggleResolved={toggleResolved} />}
-          {activeTab === 'ai-detection' && <DetectionPanel />}
+          {activeTab === 'ai-detection' && <DetectionPanel aiDetections={aiDetections} aiCameras={aiCameras} />}
           {activeTab === 'settings' && <SettingsPanel />}
         </main>
 

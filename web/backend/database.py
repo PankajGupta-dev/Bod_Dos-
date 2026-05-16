@@ -38,6 +38,7 @@ class Operator(SQLModel, table=True):
     hashed_password: str
     is_active: bool = Field(default=True)
     is_verified: bool = Field(default=False)
+    role: str = Field(default="operator")  # roles: admin, operator, viewer
     otp: Optional[str] = Field(default=None)
 
 
@@ -91,20 +92,34 @@ def seed_operators():
 
     operators = [
         Operator(
-            officer_id="IND-ARMY-001",
-            call_sign="CMDR. RAJPUT",
-            unit_code="SEC-ALPHA",
-            hashed_password=pwd_ctx.hash("SecurePass@1"),
+            officer_id="IND-ARMY-601",
+            name="Govind Raj Gupta",
+            email="govindrajgupta2@gmail.com",
+            call_sign="COMMANDER",
+            unit_code="HQ-COMMAND",
+            hashed_password=pwd_ctx.hash("1234"),
             is_verified=True,
+            role="admin"
         ),
         Operator(
             officer_id="IND-ARMY-002",
             name="MAJ. SHARMA",
             email="sharma@bsc.gov.in",
-            call_sign="MAJ. SHARMA",
+            call_sign="OPERATOR-B",
             unit_code="SEC-BRAVO",
             hashed_password=pwd_ctx.hash("SecurePass@2"),
             is_verified=True,
+            role="operator"
+        ),
+        Operator(
+            officer_id="MOB-VIEW-001",
+            name="Android Patrol Unit",
+            email="patrol@bsc.gov.in",
+            call_sign="PATROL-01",
+            unit_code="MOBILE-DIV",
+            hashed_password=pwd_ctx.hash("Android@2026"),
+            is_verified=True,
+            role="viewer"
         ),
     ]
 

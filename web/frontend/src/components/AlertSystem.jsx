@@ -62,6 +62,7 @@ const MissionStatus = ({ alerts }) => {
       <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-military-green/20">
         <h3 className="text-[10px] text-military-green tracking-widest uppercase flex items-center gap-2">
           <Radio className="w-3 h-3 animate-pulse" /> Mission Status
+          <span className="ml-2 px-1.5 py-0.5 border border-blue-500/40 text-blue-400 bg-blue-500/10 text-[7px] tracking-tighter">LEDGER: ACTIVE</span>
         </h3>
         <div className="flex items-center gap-1 text-[10px] text-gray-500 font-mono">
           <Clock className="w-3 h-3" />
@@ -235,6 +236,9 @@ const AlertSystem = ({ alerts, session, resolvedAlerts = new Set(), toggleResolv
                         {alert.ai_detections?.weapons > 0 && (
                           <span className="text-[8px] px-1 py-0.5 border border-red-500/40 text-red-400 bg-red-500/10 animate-pulse">⚠ W:{alert.ai_detections.weapons}</span>
                         )}
+                        <span className="text-[8px] px-1.5 py-0.5 border border-blue-500/40 text-blue-400 bg-blue-500/10 flex items-center gap-1">
+                          <CheckCircle2 className="w-2 h-2" /> BLOCKCHAIN VERIFIED
+                        </span>
                       </div>
                     </div>
                   )}

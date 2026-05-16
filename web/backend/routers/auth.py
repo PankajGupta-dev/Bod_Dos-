@@ -15,7 +15,7 @@ from database import get_session, Operator
 from schemas import LoginRequest, LoginResponse, RegisterRequest, VerifyOtpRequest
 from config import settings
 
-router = APIRouter(prefix="/api/auth", tags=["auth"])
+router = APIRouter(tags=["auth"])
 
 
 def send_otp_email(email: str, name: str, officer_id: str, otp: str):

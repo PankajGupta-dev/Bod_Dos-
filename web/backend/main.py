@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from database import create_db_and_tables, seed_operators, seed_settings
-from routers import auth, alerts, drones, settings as settings_router, health, cameras
+from routers import auth, alerts, drones, settings as settings_router, health, cameras, security
 from routers import detection as detection_router
 
 # Configure logging
@@ -43,96 +43,57 @@ async def lifespan(app: FastAPI):
     from routers.alerts import _broadcast as alert_broadcast
     from database import Alert, engine as db_engine
     from sqlmodel import Session
-    import time
-
+    from datetime import datetime
+    
     async def on_ai_alert(alert_event):
         """Bridge AI alerts into the existing SSE alert system."""
         try:
-            # Determine camera name from ID
-            cam_map = {"CAM-01": "ALPHA", "CAM-02": "BRAVO",
-                       "CAM-03": "CHARLIE", "CAM-04": "DELTA"}
-            sector = alert_event.sector
-            if sector == "UNKNOWN":
-                sector = cam_map.get(alert_event.camera_id, "ALPHA")
-
-            # Save to database
-            from datetime import datetime
-            alert_obj = Alert(
-                sector=sector,
-                threat=alert_event.threat,
-                camera=alert_event.camera_id,
-                lat=32.45 + (hash(alert_event.camera_id) % 10) * 0.005,
-                lng=75.68 + (hash(alert_event.camera_id) % 10) * 0.005,
-                alert_type=alert_event.alert_type,
-            )
+            # Save to DB
             with Session(db_engine) as session:
-                session.add(alert_obj)
+                # We map AI AlertEvent to the persistent DB Alert model
+                db_alert = Alert(
+                    timestamp=datetime.fromtimestamp(alert_event.timestamp),
+                    sector=alert_event.sector,
+                    threat=alert_event.threat,
+                    camera=alert_event.camera_id,
+                    lat=32.4482, # Simulated tactical coordinates
+                    lng=74.3411, 
+                    alert_type=alert_event.alert_type
+                )
+                session.add(db_alert)
                 session.commit()
-                session.refresh(alert_obj)
-
-            # Broadcast via existing SSE
-            alert_broadcast({
-                "id": alert_obj.id,
-                "timestamp": alert_obj.timestamp.isoformat(),
-                "sector": alert_obj.sector,
-                "threat": alert_obj.threat,
-                "camera": alert_obj.camera,
-                "lat": alert_obj.lat,
-                "lng": alert_obj.lng,
-                "alert_type": alert_obj.alert_type,
-                "acknowledged": False,
-                "ai_description": alert_event.description,
-                "ai_severity": alert_event.severity,
-                "ai_detections": alert_event.detections,
-            })
-            print(f"[AI ALERT] {alert_event.severity.upper()}: {alert_event.description}")
+                session.refresh(db_alert)
+                
+                # Enrich with AI descriptions for the UI
+                alert_dict = db_alert.model_dump()
+                alert_dict["id"] = db_alert.id
+                alert_dict["ai_description"] = alert_event.description
+                alert_dict["ai_severity"] = alert_event.severity
+                alert_dict["ai_detections"] = alert_event.detections
+                
+                # Broadcast via SSE (Live Dashboard)
+                await alert_broadcast(alert_dict)
+                logger.info(f"[{alert_event.camera_id}] AI ALERT DISPATCHED: {alert_event.threat}")
         except Exception as e:
-            print(f"[AI ALERT ERROR] {e}")
+            logger.error(f"Error bridging AI alert: {e}")
 
-    # Wire the alert callback
-    loop = asyncio.get_event_loop()
-    detection_engine.set_alert_callback(on_ai_alert, loop)
+    # Register callback
+    detection_engine.set_alert_callback(on_ai_alert, asyncio.get_event_loop())
+    detection_engine.start()
 
-    # Start engine (loads models in background)
-    try:
-        detection_engine.start()
-        print("AI Detection Engine started.")
-    except Exception as e:
-        print(f"AI Engine startup warning: {e} — AI features may be limited.")
-
-    # Start detection history logger (persists detection events to DB)
-    from routers.detection import detection_history_logger
-    history_task = asyncio.create_task(detection_history_logger())
-    print("Detection history logger started (5s interval).")
-
-    yield  # application runs here
+    yield
 
     # ── Shutdown ──
-    detection_engine.stop()
-    history_task.cancel()
+    print("Shutting down...")
     task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await history_task
-    except asyncio.CancelledError:
-        pass
-    print("BSC-DOP Backend shut down.")
+    detection_engine.stop()
 
 
-# ─── App ──────────────────────────────────────────────────────────────────────
+# ─── App Instance ─────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="BSC-DOP — Border Surveillance Command API",
-    description=(
-        "Real-time backend for the Border Surveillance Command & "
-        "Digital Operations Platform. Provides authentication, "
-        "alert management (SSE), drone telemetry (WebSocket), "
-        "AI-powered multi-detection (human, vehicle, fire, weapon), "
-        "and system settings."
-    ),
+    title="BSC-DOP Command Center",
+    description="Strategic Border Surveillance & Tactical Intelligence Platform",
     version="2.5.0",
     lifespan=lifespan,
     docs_url="/api/docs",
@@ -152,10 +113,20 @@ app.add_middleware(
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
-app.include_router(auth.router)
-app.include_router(alerts.router)
-app.include_router(drones.router)
-app.include_router(settings_router.router)
-app.include_router(health.router)
-app.include_router(cameras.router)
-app.include_router(detection_router.router)
+app.include_router(auth.router, prefix="/api/auth")
+app.include_router(alerts.router, prefix="/api/alerts")
+app.include_router(drones.router, prefix="/api/drones")
+app.include_router(detection_router.router, prefix="/api/detection")
+app.include_router(settings_router.router, prefix="/api/settings")
+app.include_router(security.router, prefix="/api")
+app.include_router(health.router, prefix="/api")
+app.include_router(cameras.router, prefix="/api/cameras")
+
+@app.get("/")
+async def root():
+    return {
+        "status": "online",
+        "system": "BSC-DOP Border Surveillance Command",
+        "version": "2.5.0",
+        "security_protocol": "AES-256-GCM"
+    }

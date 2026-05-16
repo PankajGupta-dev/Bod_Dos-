@@ -283,29 +283,13 @@ const CameraFeed = ({ cam, isPinned, onTogglePin, droneData, streamIp, onUpdateI
 };
 
 /* ─── CameraGrid ──────────────────────────────────────────────────────────── */
-const CameraGrid = () => {
+const CameraGrid = ({ aiCameras, setAiCameras, aiDetections, streamIps, setStreamIps }) => {
   const [pinnedCamId, setPinnedCamId] = useState(null);
   const [drones, setDrones] = useState([]);
-  const [streamIps, setStreamIps] = useState(
-    initialCameras.reduce((acc, cam) => ({ ...acc, [cam.id]: cam.ip }), {})
-  );
-  // AI state
-  const [aiCameras, setAiCameras] = useState({});  // { camId: true/false }
-  const [aiDetections, setAiDetections] = useState({});  // { camName: {...} }
 
   useEffect(() => {
     const unsub = subscribeDrones((droneList) => {
       setDrones(droneList);
-    });
-    return unsub;
-  }, []);
-
-  // Subscribe to AI detection WebSocket for live counts
-  useEffect(() => {
-    const unsub = subscribeDetections((msg) => {
-      if (msg.type === 'detections' && msg.data) {
-        setAiDetections(msg.data);
-      }
     });
     return unsub;
   }, []);

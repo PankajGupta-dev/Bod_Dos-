@@ -16,7 +16,7 @@ from database import get_session, SystemSettings
 from dependencies import get_current_operator
 from schemas import DroneTelemetry
 
-router = APIRouter(prefix="/api/drones", tags=["drones"])
+router = APIRouter(tags=["drones"])
 
 # ─── Drone state store (in-memory simulation) ────────────────────────────────
 

@@ -4,36 +4,20 @@ import { subscribeDetections, fetchAIStatus, registerAICamera, fetchDetectionHis
 import { format } from 'date-fns';
 
 /* ─── AI Detection Panel ──────────────────────────────────────────────────── */
-const DetectionPanel = () => {
+const DetectionPanel = ({ aiDetections = {} }) => {
   const [aiStatus, setAiStatus] = useState(null);
-  const [detections, setDetections] = useState({});
-  const [wsConnected, setWsConnected] = useState(false);
+  const [wsConnected, setWsConnected] = useState(true);
   const [activeSubTab, setActiveSubTab] = useState('live');  // 'live' | 'history' | 'stats'
 
-  // Subscribe to detection WebSocket
+  // Initial status fetch
   useEffect(() => {
-    const unsub = subscribeDetections((msg) => {
-      setWsConnected(true);
-      if (msg.type === 'detections') {
-        setDetections(msg.data || {});
-        if (msg.status) {
-          setAiStatus(prev => ({ ...prev, ...msg.status }));
-        }
-      } else if (msg.type === 'status') {
-        setAiStatus(msg.data);
-      }
-    });
-
-    // Initial status fetch
     fetchAIStatus()
       .then(setAiStatus)
       .catch(() => {});
-
-    return unsub;
   }, []);
 
-  // Aggregate totals across all cameras
-  const totals = Object.values(detections).reduce(
+  // Aggregate totals across all cameras using the shared detections prop
+  const totals = Object.values(aiDetections).reduce(
     (acc, cam) => ({
       humans: acc.humans + (cam.humans || 0),
       vehicles: acc.vehicles + (cam.vehicles || 0),
@@ -43,7 +27,7 @@ const DetectionPanel = () => {
     { humans: 0, vehicles: 0, fire: false, weapons: 0 }
   );
 
-  const cameraList = Object.values(detections);
+  const cameraList = Object.values(aiDetections);
 
   return (
     <div className="w-full h-full flex flex-col bg-military-bg overflow-hidden">
