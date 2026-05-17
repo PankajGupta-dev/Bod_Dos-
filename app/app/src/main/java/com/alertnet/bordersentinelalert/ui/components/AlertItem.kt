@@ -56,26 +56,62 @@ fun AlertItem(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = alert.alertTitle,
+                        text = alert. alertType,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
-                val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+                val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).apply {
+                    timeZone = java.util.TimeZone.getTimeZone("Asia/Kolkata")
+                }
                 Text(
-                    text = sdf.format(Date(alert.timestamp)),
+                    text = sdf.format(java.util.Date(alert.timestamp)),
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
                 )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
+            
+            val subjectText = if (!alert.personName.isNullOrEmpty()) {
+                "Identified: ${alert.personName}"
+            } else {
+                "Unknown ID: ${alert.unknownId ?: "N/A"}"
+            }
+            
             Text(
-                text = alert.description,
+                text = "$subjectText • Cam: ${alert.cameraId}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            // Blockchain Status Badge
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                color = when (alert.blockchainStatus) {
+                    "SUCCESS" -> Color(0xFFE8F5E9)
+                    "FAILED" -> Color(0xFFFFEBEE)
+                    else -> Color(0xFFE3F2FD)
+                },
+                shape = RoundedCornerShape(4.dp)
+            ) {
+                Text(
+                    text = when (alert.blockchainStatus) {
+                        "SUCCESS" -> "✓ VERIFIED"
+                        "FAILED" -> "⚠ TAMPERED"
+                        else -> "VERIFYING..."
+                    },
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = when (alert.blockchainStatus) {
+                        "SUCCESS" -> Color(0xFF2E7D32)
+                        "FAILED" -> Color(0xFFC62828)
+                        else -> Color(0xFF1565C0)
+                    }
+                )
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
             Row(
@@ -85,14 +121,14 @@ fun AlertItem(
             ) {
                 Column {
                     Text(
-                        text = "Confidence: ${alert.confidence}%",
+                        text = "Confidence: ${(alert.confidence * 100).toInt()}%",
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (alert.confidence > 90) HighConfidence else Color.Yellow
+                        color = if (alert.confidence > 0.9) HighConfidence else Color(0xFFFBC02D)
                     )
                     Text(
                         text = "Threat: ${alert.threatLevel}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.LightGray
+                        color = Color.Gray
                     )
                 }
 

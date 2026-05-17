@@ -72,6 +72,9 @@ android {
 // Fix for AGP 8.x incremental packager bug:
 tasks.configureEach {
     if (name.startsWith("package") && (name.endsWith("Debug") || name.endsWith("Release"))) {
+        val isDebug = name.endsWith("Debug")
+        val buildType = if (isDebug) "debug" else "release"
+        
         doFirst {
             val apkDir = layout.buildDirectory.dir("outputs/apk").get().asFile
             val intermediatesApk = layout.buildDirectory.dir("intermediates/apk").get().asFile
@@ -84,6 +87,17 @@ tasks.configureEach {
             // Also clean specific incremental directories if they exist
             val packagingDir = File(incrementalDir, "package${name.substringAfter("package")}")
             if (packagingDir.exists()) packagingDir.deleteRecursively()
+        }
+        
+        doLast {
+            val packagedApk = File(layout.buildDirectory.dir("outputs/apk/$buildType").get().asFile, "app-$buildType.apk")
+            val targetDir = layout.buildDirectory.dir("intermediates/apk/$buildType").get().asFile
+            if (packagedApk.exists()) {
+                targetDir.mkdirs()
+                val targetApk = File(targetDir, "app-$buildType.apk")
+                packagedApk.copyTo(targetApk, overwrite = true)
+                println("Copied packaged APK to intermediates: ${targetApk.absolutePath}")
+            }
         }
     }
 }
@@ -134,6 +148,7 @@ dependencies {
 
     // Logging
     implementation(libs.timber)
+    implementation(libs.coil.compose)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

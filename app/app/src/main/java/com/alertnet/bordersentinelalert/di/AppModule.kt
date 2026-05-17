@@ -34,7 +34,8 @@ object AppModule {
             context,
             AlertDatabase::class.java,
             "border_alerts.db"
-        ).build()
+        ).fallbackToDestructiveMigration()
+            .build()
     }
 
     @Provides
@@ -51,9 +52,12 @@ object AppModule {
         
         return OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
-            .connectTimeout(30, TimeUnit.SECONDS)
+            .connectionPool(okhttp3.ConnectionPool(10, 5, TimeUnit.MINUTES))
+            .connectTimeout(15, TimeUnit.SECONDS) // Reduced timeout for faster failure/retry
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
+            .pingInterval(30, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .build()
     }
 
@@ -61,7 +65,7 @@ object AppModule {
     @Singleton
     fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
         return Retrofit.Builder()
-            .baseUrl("https://api.bordersentinel.com/")
+            .baseUrl("http://10.227.1.32:8765/")
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()

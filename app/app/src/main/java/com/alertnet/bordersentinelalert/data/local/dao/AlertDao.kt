@@ -21,6 +21,9 @@ interface AlertDao {
     @Query("UPDATE border_alerts SET isRead = 1 WHERE id = :alertId")
     suspend fun markAsRead(alertId: Int)
 
+    @Query("UPDATE border_alerts SET blockchainStatus = :status WHERE id = :alertId")
+    suspend fun updateBlockchainStatus(alertId: Int, status: String)
+
     @Query("DELETE FROM border_alerts")
     suspend fun clearAllAlerts()
 }

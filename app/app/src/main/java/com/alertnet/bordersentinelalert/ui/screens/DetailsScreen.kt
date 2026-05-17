@@ -75,14 +75,14 @@ fun DetailsScreen(alertId: Int, viewModel: AlertViewModel, onNavigateBack: () ->
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = alert.alertTitle,
+                        text = alert.alertType,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Black,
                         color = if (alert.threatLevel == "HIGH") Color.Red else Color.White
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "COORD: ${alert.latitude}, ${alert.longitude}",
+                        text = "CAMERA: ${alert.cameraId} • COORD: ${alert.latitude}, ${alert.longitude}",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray
                     )
@@ -92,14 +92,30 @@ fun DetailsScreen(alertId: Int, viewModel: AlertViewModel, onNavigateBack: () ->
             Spacer(modifier = Modifier.height(16.dp))
 
             DetailRow("THREAT LEVEL", alert.threatLevel, if (alert.threatLevel == "HIGH") Color.Red else Color.Yellow)
-            DetailRow("CONFIDENCE", "${alert.confidence}%", if (alert.confidence > 90) Color.Green else Color.Yellow)
+            DetailRow("CONFIDENCE", "${(alert.confidence * 100).toInt()}%", if (alert.confidence > 0.9) Color.Green else Color.Yellow)
+            DetailRow("BLOCKCHAIN", when(alert.blockchainStatus) {
+                "SUCCESS" -> "✓ VERIFIED"
+                "FAILED" -> "⚠ TAMPERED"
+                else -> "VERIFYING..."
+            }, when(alert.blockchainStatus) {
+                "SUCCESS" -> Color.Green
+                "FAILED" -> Color.Red
+                else -> Color.Cyan
+            })
             
             Spacer(modifier = Modifier.height(16.dp))
 
             Text("SITUATION REPORT", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
             Spacer(modifier = Modifier.height(8.dp))
+            
+            val situationReport = if (!alert.personName.isNullOrEmpty()) {
+                "Subject identified as ${alert.personName}. Detected by ${alert.cameraId} with high confidence. Data hash: ${alert.blockchainHash ?: "N/A"}"
+            } else {
+                "Unknown subject ${alert.unknownId ?: "N/A"} detected at perimeter. Visual confirmation required. Data hash: ${alert.blockchainHash ?: "N/A"}"
+            }
+            
             Text(
-                text = alert.description,
+                text = situationReport,
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.LightGray,
                 lineHeight = 22.sp

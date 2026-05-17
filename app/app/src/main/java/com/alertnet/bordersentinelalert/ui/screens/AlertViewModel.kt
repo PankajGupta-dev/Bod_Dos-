@@ -10,11 +10,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.alertnet.bordersentinelalert.data.remote.AlertWebSocketManager
+import com.alertnet.bordersentinelalert.data.remote.WebSocketState
 
 @HiltViewModel
 class AlertViewModel @Inject constructor(
-    private val repository: AlertRepository
+    private val repository: AlertRepository,
+    val webSocketManager: AlertWebSocketManager
 ) : ViewModel() {
+
+    val connectionState: StateFlow<WebSocketState> = webSocketManager.connectionState
 
     val alerts: StateFlow<List<AlertEntity>> = repository.allAlerts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -37,13 +42,15 @@ class AlertViewModel @Inject constructor(
     fun simulateAlert() {
         viewModelScope.launch {
             val alert = AlertEntity(
-                alertTitle = "UNAUTHORIZED MOVEMENT",
-                description = "Infrared sensor triggered at Sector 4.",
-                latitude = 22.9487,
-                longitude = 88.4562,
-                threatLevel = "HIGH",
-                confidence = 94,
-                mapUrl = "https://maps.google.com/?q=22.9487,88.4562"
+                alertType = "INTRUSION",
+                personName = null,
+                unknownId = "UNK_SIM_01",
+                confidence = 0.94,
+                snapshotUrl = "https://example.com/snapshot.jpg",
+                blockchainVerified = true,
+                blockchainHash = "simulated_hash_123",
+                cameraId = "SIM_CAM_01",
+                threatLevel = "HIGH"
             )
             repository.insertAlert(alert)
         }

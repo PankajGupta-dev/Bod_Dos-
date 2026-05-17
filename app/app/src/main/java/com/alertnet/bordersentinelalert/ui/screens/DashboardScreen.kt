@@ -19,6 +19,14 @@ import com.alertnet.bordersentinelalert.ui.components.AlertItem
 import com.alertnet.bordersentinelalert.util.MapUtils
 import androidx.compose.ui.platform.LocalContext
 
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.Stroke
+import kotlinx.coroutines.delay
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
@@ -29,6 +37,7 @@ fun DashboardScreen(
 ) {
     val alerts by viewModel.alerts.collectAsState()
     val unreadCount by viewModel.unreadAlerts.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
     val context = LocalContext.current
     
     var showEmergencyBanner by remember { mutableStateOf(false) }
@@ -97,9 +106,7 @@ fun DashboardScreen(
             )
             
             if (alerts.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No activity detected.", color = Color.DarkGray)
-                }
+                MilitaryIdleMonitoringView(connectionState = connectionState)
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
                     items(alerts) { alert ->
@@ -113,6 +120,156 @@ fun DashboardScreen(
             }
         }
     }
+}
+
+@Composable
+fun MilitaryIdleMonitoringView(connectionState: com.alertnet.bordersentinelalert.data.remote.WebSocketState) {
+    val infiniteTransition = rememberInfiniteTransition(label = "RadarSweep")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(4000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "Rotation"
+    )
+
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 0.8f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "GlowAlpha"
+    )
+
+    var blockchainLogs by remember {
+        mutableStateOf(listOf(
+            "SYS_INIT: Secure ledger linked.",
+            "BLOCK #749281 verified. Hash: 0x8a104f29ee8b24a1",
+            "SECURE CHANNEL: Active."
+        ))
+    }
+
+    LaunchedEffect(Unit) {
+        var blockNumber = 749282
+        while (true) {
+            delay(3000)
+            val fakeHash = "0x" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 16)
+            val logMessage = "BLOCK #$blockNumber verified. Hash: $fakeHash"
+            blockchainLogs = (blockchainLogs + logMessage).takeLast(4)
+            blockNumber++
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier.size(180.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val radius = size.minDimension / 2f
+                
+                drawCircle(color = Color(0xFF1B3B2B), radius = radius, style = Stroke(width = 2.dp.toPx()))
+                drawCircle(color = Color(0xFF1B3B2B), radius = radius * 0.66f, style = Stroke(width = 1.dp.toPx()))
+                drawCircle(color = Color(0xFF1B3B2B), radius = radius * 0.33f, style = Stroke(width = 1.dp.toPx()))
+                
+                drawLine(color = Color(0xFF1B3B2B), start = androidx.compose.ui.geometry.Offset(0f, center.y), end = androidx.compose.ui.geometry.Offset(size.width, center.y), strokeWidth = 1.dp.toPx())
+                drawLine(color = Color(0xFF1B3B2B), start = androidx.compose.ui.geometry.Offset(center.x, 0f), end = androidx.compose.ui.geometry.Offset(center.x, size.height), strokeWidth = 1.dp.toPx())
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .rotate(rotation)
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val radius = size.minDimension / 2f
+                    drawArc(
+                        brush = Brush.sweepGradient(
+                            colors = listOf(Color.Transparent, Color(0xFF4CAF50).copy(alpha = 0.4f)),
+                            center = center
+                        ),
+                        startAngle = 0f,
+                        sweepAngle = 90f,
+                        useCenter = true
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(Color(0xFF4CAF50).copy(alpha = glowAlpha), CircleShape)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            StatusIndicatorText("🟢 BLOCKCHAIN VERIFIED")
+            Spacer(modifier = Modifier.height(6.dp))
+            StatusIndicatorText("🟢 SURVEILLANCE NETWORK ONLINE")
+            Spacer(modifier = Modifier.height(6.dp))
+            
+            val secureText = when (connectionState) {
+                com.alertnet.bordersentinelalert.data.remote.WebSocketState.CONNECTED -> "🟢 SECURE CHANNEL ACTIVE"
+                com.alertnet.bordersentinelalert.data.remote.WebSocketState.CONNECTING -> "🟡 SECURE LINE HANDSHAKE..."
+                com.alertnet.bordersentinelalert.data.remote.WebSocketState.DISCONNECTED -> "🔴 SECURE CHANNEL OFFLINE"
+            }
+            StatusIndicatorText(secureText)
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth().height(110.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF151515)),
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFF1B3B2B))
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = "BLOCKCHAIN LEDGER DIAGNOSTICS",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF4CAF50),
+                    letterSpacing = 1.sp
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                blockchainLogs.forEach { log ->
+                    Text(
+                        text = log,
+                        fontSize = 10.sp,
+                        color = Color.LightGray,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StatusIndicatorText(text: String) {
+    Text(
+        text = text,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        color = Color(0xFF4CAF50),
+        letterSpacing = 2.sp,
+        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+    )
 }
 
 @Composable

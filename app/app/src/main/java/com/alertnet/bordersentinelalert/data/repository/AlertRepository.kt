@@ -25,6 +25,10 @@ class AlertRepository @Inject constructor(
         alertDao.markAsRead(alertId)
     }
 
+    suspend fun updateBlockchainStatus(alertId: Int, status: String) {
+        alertDao.updateBlockchainStatus(alertId, status)
+    }
+
     suspend fun clearAllAlerts() {
         alertDao.clearAllAlerts()
     }

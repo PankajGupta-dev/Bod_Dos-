@@ -12,6 +12,7 @@ import com.alertnet.bordersentinelalert.service.SyncWorker
 import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
+import com.alertnet.bordersentinelalert.data.DemoAlertSeeder
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -19,6 +20,9 @@ class BorderSentinelApp : Application(), Configuration.Provider {
 
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
+
+    @Inject
+    lateinit var demoAlertSeeder: DemoAlertSeeder
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -35,6 +39,9 @@ class BorderSentinelApp : Application(), Configuration.Provider {
             // PRODUCTION: Only log high-priority errors, no sensitive data
             Timber.plant(ReleaseTree())
         }
+
+        // Seed demo threat log alerts (matches web dashboard THREAT LOG format)
+        demoAlertSeeder.seedDemoAlerts()
 
         createNotificationChannel()
         setupPeriodicSync()

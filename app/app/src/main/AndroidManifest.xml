@@ -25,6 +25,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.BorderSentinelAlert">
         
         <!-- Google Maps API Key -->
@@ -61,6 +62,11 @@
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" 
                 android:value="Real-time border alert monitoring" />
         </service>
+
+        <receiver
+            android:name=".service.NotificationActionReceiver"
+            android:enabled="true"
+            android:exported="false" />
 
         <receiver
             android:name=".service.BootReceiver"
