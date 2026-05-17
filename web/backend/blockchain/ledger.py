@@ -70,6 +70,8 @@ class BlockchainLedger:
                             detections: List[str], 
                             confidence: float, 
                             alert_level: str,
+                            person_name: str = "Unknown",
+                            unknown_id: Optional[str] = None,
                             metadata: Optional[Dict] = None,
                             snapshot_cid: Optional[str] = None):
         """
@@ -79,58 +81,65 @@ class BlockchainLedger:
             "event_id": f"EVT-{int(time.time()*1000)}",
             "camera_id": camera_id,
             "timestamp": datetime.now().isoformat(),
-            "detections": detections,
-            "confidence": round(confidence, 4),
-            "alert_level": alert_level,
-            "snapshot_cid": snapshot_cid,
+            "alert_type": alert_level,
+            "person_name": person_name,
+            "unknown_id": unknown_id,
+            "confidence_score": round(confidence, 4),
+            "snapshot_hash": snapshot_cid, # Snapshot CID is used as content hash
             "metadata": metadata or {}
         }
         
-        # Add the unique cryptographic hash
-        event["event_hash"] = self.generate_event_hash(event)
+        # Add the unique cryptographic hash (Fingerprint)
+        event["blockchain_hash"] = self.generate_event_hash(event)
         
-        # Add to async queue
+        # Add to async queue for non-blocking processing
         await self._event_queue.put(event)
-        logger.debug(f"Event {event['event_id']} queued for blockchain commitment")
+        logger.debug(f"Event {event['event_id']} queued for verification.")
 
     async def _process_queue(self):
         """
         Background worker that pushes events to Hyperledger Fabric.
-        Uses batching or sequential submission depending on network latency.
         """
         while self._is_active:
             try:
                 event = await self._event_queue.get()
-                
-                # --- HYPERLEDGER FABRIC INTEGRATION POINT ---
-                # In a full production setup, we would use:
-                # gateway.get_network(channel).get_contract(chaincode).submit_transaction('AddEvent', ...)
-                
-                # For this implementation, we simulate the consensus delay 
-                # but ensure the internal state remains consistent.
                 await self._simulate_consensus(event)
-                
                 self._event_queue.task_done()
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Blockchain submission error: {e}")
-                await asyncio.sleep(5) # Backoff
+                logger.error(f"Blockchain processing error: {e}")
+                await asyncio.sleep(2)
 
     async def _simulate_consensus(self, event: Dict):
-        """Executes Smart Contract logic and simulates network consensus."""
-        # Simulated consensus time
-        await asyncio.sleep(0.15)
+        """Executes Smart Contract logic with aggressive performance optimization."""
+        # Reduced consensus delay for high-speed simulation
+        await asyncio.sleep(0.05)
         
         try:
             # Execute the Smart Contract logic (Validation + Commitment)
             surveillance_contract.add_detection_event(event)
             
-            # Simulated transaction hash for log audit
-            tx_id = hashlib.sha1(event["event_hash"].encode()).hexdigest()[:16]
-            logger.info(f"BLOCKCHAIN COMMIT SUCCESS | ID: {event['event_id']} | Tx: {tx_id} | Hash: {event['event_hash'][:12]}...")
+            # Simulated transaction ID (Commitment Hash)
+            tx_id = hashlib.sha1(event["blockchain_hash"].encode()).hexdigest()[:16]
+            
+            # --- AGGRESSIVE EXTERNAL DISPATCH ---
+            from bridges.sentinel import sentinel_bridge
+            
+            verified_payload = {
+                **event,
+                "blockchain_verified": True,
+                "snapshot_url": event.get("snapshot_hash"),
+                "verification_tx": tx_id
+            }
+            
+            # Sub-millisecond handoff to the dedicated bridge thread
+            sentinel_bridge.emit_alert(verified_payload)
+            
+            logger.debug(f"BLOCKCHAIN VERIFIED | ID: {event['event_id']} | TX: {tx_id}")
+            
         except Exception as e:
-            logger.error(f"SMART CONTRACT VIOLATION: {e}")
+            logger.error(f"VERIFICATION FAILURE: {e}")
 
 # Singleton instance
 blockchain_ledger = BlockchainLedger()

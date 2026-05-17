@@ -12,6 +12,7 @@ from typing import Optional, Dict
 
 from ai.config import ai_config
 from security.manager import encryption_manager
+from utils import resolve_esp32_url, is_url_reachable
 
 logger = logging.getLogger("bsc.video_pipeline")
 
@@ -128,68 +129,156 @@ class CameraCapture:
         """Main capture loop running in a background thread."""
         while self._running:
             try:
-                if not self._connect():
-                    time.sleep(ai_config.CAPTURE_RECONNECT_INTERVAL)
-                    continue
+                resolved_url = resolve_esp32_url(self.url)
+                
+                # Check if we should use the custom robust HTTP MJPEG reader
+                if resolved_url.startswith(('http://', 'https://')):
+                    logger.info(f"[{self.camera_id}] Starting robust HTTP MJPEG capture loop for {resolved_url}")
+                    self._http_capture_loop(resolved_url)
+                else:
+                    # Fall back to standard OpenCV VideoCapture (e.g. for RTSP, USB cams, etc.)
+                    if not self._connect():
+                        time.sleep(ai_config.CAPTURE_RECONNECT_INTERVAL)
+                        continue
 
-                while self._running and self._cap and self._cap.isOpened():
-                    # For network streams, the buffer can accumulate lag. 
-                    # We grab all available frames but only retrieve the latest one.
-                    if self.url.startswith(('rtsp', 'http')):
-                        self._cap.grab() # Clear the internal buffer
-                    
-                    ret, frame = self._cap.read()
-                    if not ret:
+                    while self._running and self._cap and self._cap.isOpened():
+                        if self.url.startswith('rtsp'):
+                            self._cap.grab() # Clear the internal buffer
+                        
+                        ret, frame = self._cap.read()
+                        if not ret:
+                            with self._lock:
+                                self._status.connected = False
+                                self._status.error = "Frame read failed"
+                            logger.warning(f"[{self.camera_id}] Frame read failed, reconnecting...")
+                            break
+
                         with self._lock:
-                            self._status.connected = False
-                            self._status.error = "Frame read failed"
-                        logger.warning(f"[{self.camera_id}] Frame read failed, reconnecting...")
-                        break
+                            self._frame = frame
+                            self._status.connected = True
+                            self._status.frame_count += 1
+                            self._status.last_frame_time = time.time()
+                            self._status.error = None
 
-                    with self._lock:
-                        self._frame = frame
-                        self._status.connected = True
-                        self._status.frame_count += 1
-                        self._status.last_frame_time = time.time()
-                        self._status.error = None
-
-                    self._fps_counter.tick()
-
-
+                        self._fps_counter.tick()
             except Exception as e:
-                logger.error(f"[{self.camera_id}] Capture error: {e}")
+                logger.error(f"[{self.camera_id}] Capture loop error: {e}")
                 with self._lock:
                     self._status.connected = False
                     self._status.error = str(e)
 
-            # Reconnect delay
+            # Reconnect delay for next cycle
             if self._running:
                 self._release_capture()
                 with self._lock:
                     self._status.reconnect_count += 1
                 time.sleep(ai_config.CAPTURE_RECONNECT_INTERVAL)
 
+    def _http_capture_loop(self, url: str):
+        """
+        Custom high-performance HTTP MJPEG stream reader.
+        Extremely robust against slow Wi-Fi and packet loss.
+        """
+        import urllib.request
+        import urllib.error
+        
+        req = urllib.request.Request(url)
+        req.add_header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+        
+        stream = None
+        try:
+            stream = urllib.request.urlopen(req, timeout=4.0)
+            with self._lock:
+                self._status.connected = True
+                self._status.error = None
+            logger.info(f"[{self.camera_id}] HTTP stream capture started for: {url}")
+            
+            bytes_buffer = b''
+            while self._running:
+                chunk = stream.read(8192)
+                if not chunk:
+                    logger.warning(f"[{self.camera_id}] HTTP stream connection closed by camera, reconnecting...")
+                    break
+                    
+                bytes_buffer += chunk
+                
+                # Scan for JPEG Start of Image (SOI) and End of Image (EOI)
+                while True:
+                    a = bytes_buffer.find(b'\xff\xd8')
+                    b = bytes_buffer.find(b'\xff\xd9')
+                    
+                    if a != -1 and b != -1:
+                        if a < b:
+                            jpg_bytes = bytes_buffer[a:b+2]
+                            bytes_buffer = bytes_buffer[b+2:]
+                            
+                            # Decode JPEG frame
+                            nparr = np.frombuffer(jpg_bytes, np.uint8)
+                            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                            
+                            if frame is not None:
+                                with self._lock:
+                                    self._frame = frame
+                                    self._status.connected = True
+                                    self._status.frame_count += 1
+                                    self._status.last_frame_time = time.time()
+                                    self._status.error = None
+                                self._fps_counter.tick()
+                            else:
+                                logger.warning(f"[{self.camera_id}] Failed to decode JPEG frame")
+                        else:
+                            bytes_buffer = bytes_buffer[a:]
+                    else:
+                        break
+                        
+                # Clean up memory footprint of the buffer
+                if len(bytes_buffer) > 512 * 1024:
+                    bytes_buffer = bytes_buffer[-1024:]
+                    
+        except Exception as e:
+            logger.error(f"[{self.camera_id}] HTTP capture error: {e}")
+            with self._lock:
+                self._status.connected = False
+                self._status.error = str(e)
+        finally:
+            if stream:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+            logger.info(f"[{self.camera_id}] HTTP stream capture ended.")
+
     def _connect(self) -> bool:
         """Attempt to connect to the camera."""
         try:
             self._release_capture()
-            logger.info(f"[{self.camera_id}] Connecting to {self.url}...")
-            cap = cv2.VideoCapture(self.url)
+            resolved_url = resolve_esp32_url(self.url)
+            
+            # Fast liveness probe to prevent blocking background thread on offline cameras
+            if not is_url_reachable(resolved_url):
+                with self._lock:
+                    self._status.error = "Camera offline or unreachable"
+                    self._status.connected = False
+                logger.warning(f"[{self.camera_id}] Stream {resolved_url} is unreachable.")
+                return False
 
-            if self.url.startswith("rtsp"):
+            logger.info(f"[{self.camera_id}] Connecting to {resolved_url} (original: {self.url})...")
+            cap = cv2.VideoCapture(resolved_url)
+
+            if resolved_url.startswith("rtsp"):
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, ai_config.CAPTURE_BUFFER_SIZE)
 
             if not cap.isOpened():
                 with self._lock:
                     self._status.error = "Failed to open stream"
-                logger.warning(f"[{self.camera_id}] Failed to open {self.url}")
+                logger.warning(f"[{self.camera_id}] Failed to open {resolved_url}")
                 return False
 
             self._cap = cap
             with self._lock:
                 self._status.connected = True
                 self._status.error = None
-            logger.info(f"[{self.camera_id}] Connected successfully")
+            logger.info(f"[{self.camera_id}] Connected successfully to {resolved_url}")
             return True
 
         except Exception as e:

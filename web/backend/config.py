@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # Drone telemetry broadcast interval (seconds)
     DRONE_TELEMETRY_INTERVAL: float = 3.0
 
+    # External Sentinel Bridge
+    SENTINEL_WS_URL: str = "wss://api.bordersentinel.com/ws"
+
     # SMTP Settings
     SMTP_EMAIL: str = ""
     SMTP_PASSWORD: str = ""

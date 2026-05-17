@@ -1,7 +1,9 @@
 """
 FastAPI dependency: extract + validate Bearer token from the request.
+Supports both Authorization: Bearer header AND ?token= query param
+(the latter is required for SSE / EventSource which cannot set headers).
 """
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlmodel import Session, select
 
@@ -13,10 +15,11 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 async def get_current_operator(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    token: str = None,
+    token: str = Query(default=None, alias="token"),  # for SSE / EventSource
     session: Session = Depends(get_session),
 ) -> Operator:
-    actual_token = credentials.credentials if credentials else token
+    # Prefer Authorization header; fall back to ?token= query param (SSE)
+    actual_token = (credentials.credentials if credentials else None) or token
 
     if not actual_token:
         raise HTTPException(

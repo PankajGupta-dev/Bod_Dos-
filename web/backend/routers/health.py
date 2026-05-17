@@ -1,7 +1,8 @@
 """
 System health router
-  GET /api/health   — public liveness check
-  GET /api/status   — authenticated full system status
+  GET /api/health           — public liveness check
+  GET /api/status           — authenticated full system status
+  GET /api/sentinel/status  — Sentinel Bridge mobile-link diagnostics
 """
 import time
 from fastapi import APIRouter, Depends
@@ -10,6 +11,7 @@ from sqlmodel import Session, select, func
 from database import get_session, Alert, SystemSettings
 from dependencies import get_current_operator
 from schemas import SystemHealth
+from bridges.sentinel import sentinel_bridge
 
 router = APIRouter(tags=["health"])
 
@@ -55,3 +57,14 @@ def system_status(
         active_alerts=active_alerts,
         version=_VERSION,
     )
+
+
+@router.get("/sentinel/status")
+def sentinel_status(_op=Depends(get_current_operator)):
+    """
+    Diagnostic endpoint for the Sentinel Bridge mobile link.
+    Returns real-time connection state, throughput, and last error.
+    """
+    status = sentinel_bridge.get_status()
+    status["connection_label"] = "🟢 LIVE" if status["ws_connected"] else "🔴 RECONNECTING"
+    return status

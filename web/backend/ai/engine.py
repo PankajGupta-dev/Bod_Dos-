@@ -25,6 +25,7 @@ from ai.tracker import ObjectTracker
 from ai.alert_fusion import AlertFusionEngine, AlertEvent
 from blockchain.ledger import blockchain_ledger
 from blockchain.ipfs import ipfs_service
+from bridges.sentinel import sentinel_bridge
 
 logger = logging.getLogger("bsc.engine")
 
@@ -107,6 +108,9 @@ class DetectionEngine:
         self.total_detections = 0
         self.total_alerts = 0
         self.start_time = 0.0
+
+        # Per-detection-type cooldowns: "camera_id:type" -> last_notification_time
+        self._detection_cooldowns: Dict[str, float] = {}
 
     def load_models(self) -> bool:
         """Load all AI models. Call once on startup."""
@@ -377,8 +381,18 @@ class DetectionEngine:
             self.total_alerts += 1
             # Pass the raw frame for evidence capture if needed
             self._dispatch_alert(alert, frame)
+        
+        # ── 9. Real-time notifications → Mobile + Threat Log + Dashboard ──
+        if humans > 0:
+            self._notify_detection(camera_id, "human", humans, avg_conf, sector)
+        if vehicles > 0:
+            self._notify_detection(camera_id, "vehicle", vehicles, avg_conf, sector)
+        if weapons > 0:
+            self._notify_detection(camera_id, "weapon", weapons, avg_conf, sector)
+        if fire:
+            self._notify_detection(camera_id, "fire", 1, avg_conf, sector)
 
-        # ── 9. Broadcast detection events ──
+        # ── 10. Broadcast detection events ──
         self._broadcast_events(camera_id, state)
 
     def _draw_annotations(
@@ -535,6 +549,8 @@ class DetectionEngine:
                             detections=active_detections,
                             confidence=alert.confidence,
                             alert_level=alert.severity,
+                            person_name=getattr(alert, 'person_name', "Unknown"),
+                            unknown_id=getattr(alert, 'unknown_id', None),
                             metadata={
                                 "sector": alert.sector,
                                 "threat": alert.threat,
@@ -547,20 +563,21 @@ class DetectionEngine:
                 else:
                     # Log to Blockchain without snapshot for lower severity
                     active_detections = [cat for cat, count in alert.detections.items() if count > 0 or count is True]
-                    asyncio.run_coroutine_threadsafe(
-                        blockchain_ledger.log_detection(
+                    async def log_and_notify():
+                        await blockchain_ledger.log_detection(
                             camera_id=alert.camera_id,
                             detections=active_detections,
                             confidence=alert.confidence,
                             alert_level=alert.severity,
+                            person_name=getattr(alert, 'person_name', "Unknown"),
+                            unknown_id=getattr(alert, 'unknown_id', None),
                             metadata={
                                 "sector": alert.sector,
                                 "threat": alert.threat,
                                 "description": alert.description
                             }
-                        ), 
-                        self._loop
-                    )
+                        )
+                    asyncio.run_coroutine_threadsafe(log_and_notify(), self._loop)
             except Exception as e:
                 logger.error(f"Alert dispatch/blockchain error: {e}")
 
@@ -582,6 +599,86 @@ class DetectionEngine:
                 callback(event_data)
             except Exception as e:
                 logger.error(f"Event broadcast error: {e}")
+
+    def _notify_detection(self, camera_id: str, detection_type: str, count: int, confidence: float, sector: str = "UNKNOWN"):
+        """
+        Unified real-time notifier for ALL detection types: human, vehicle, weapon, fire.
+        Every detection fires to:
+          1. Sentinel Bridge  → Mobile push notification
+          2. Alert Callback   → DB (Threat Log) + SSE (Live Dashboard)
+        Uses a 5-second per-type cooldown per camera to prevent flooding.
+        """
+        now = time.time()
+        cooldown_key = f"{camera_id}:{detection_type}"
+        if (now - self._detection_cooldowns.get(cooldown_key, 0)) < 5.0:
+            return
+        self._detection_cooldowns[cooldown_key] = now
+
+        # ── Build labels per detection type ──
+        if detection_type == "human":
+            threat_label  = f"{count} Human{'s' if count > 1 else ''} Detected"
+            description   = f"Human presence: {count} individual{'s' if count > 1 else ''} detected in sector {sector}"
+            severity      = "high" if count >= 3 else "medium"
+            alert_type    = "critical" if count >= 3 else "warning"
+            mobile_type   = "HUMAN_DETECTED"
+            detections    = {"humans": count, "vehicles": 0, "fire": False, "weapons": 0}
+        elif detection_type == "vehicle":
+            threat_label  = f"{count} Vehicle{'s' if count > 1 else ''} Detected"
+            description   = f"Vehicle activity: {count} vehicle{'s' if count > 1 else ''} spotted in sector {sector}"
+            severity      = "medium"
+            alert_type    = "warning"
+            mobile_type   = "VEHICLE_DETECTED"
+            detections    = {"humans": 0, "vehicles": count, "fire": False, "weapons": 0}
+        elif detection_type == "weapon":
+            threat_label  = f"Weapon{'s' if count > 1 else ''} Detected"
+            description   = f"DANGER: {count} weapon{'s' if count > 1 else ''} identified in sector {sector}"
+            severity      = "critical"
+            alert_type    = "critical"
+            mobile_type   = "WEAPON_DETECTED"
+            detections    = {"humans": 0, "vehicles": 0, "fire": False, "weapons": count}
+        elif detection_type == "fire":
+            threat_label  = "Fire / Smoke Detected"
+            description   = f"Fire or smoke detected in sector {sector} — immediate response required"
+            severity      = "high"
+            alert_type    = "critical"
+            mobile_type   = "FIRE_DETECTED"
+            detections    = {"humans": 0, "vehicles": 0, "fire": True, "weapons": 0}
+        else:
+            return
+
+        # ── 1. Mobile Push via Sentinel Bridge (non-blocking) ──
+        sentinel_bridge.emit_alert({
+            "event_id":          f"{detection_type.upper()}-{int(now * 1000)}",
+            "camera_id":         camera_id,
+            "alert_type":        mobile_type,
+            "confidence":        round(confidence, 4),
+            "timestamp":         time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+            "blockchain_verified": False,
+            "metadata":          {"count": count, "sector": sector, "threat": threat_label},
+        })
+
+        # ── 2. Threat Log (DB) + Live Dashboard (SSE) via alert callback ──
+        if self._alert_callback and self._loop:
+            alert_event = AlertEvent(
+                camera_id=camera_id,
+                sector=sector,
+                threat=threat_label,
+                description=description,
+                severity=severity,
+                alert_type=alert_type,
+                confidence=round(confidence, 3),
+                detections=detections,
+                moving_objects=[],
+                timestamp=now,
+            )
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self._alert_callback(alert_event), self._loop
+                )
+            except Exception as e:
+                logger.error(f"[{camera_id}] Notification callback error ({detection_type}): {e}")
+
+        logger.info(f"[{camera_id}] {detection_type.upper()} → Mobile + ThreatLog + SSE: {threat_label}")
 
 
 # ─── Global singleton ────────────────────────────────────────────────────────

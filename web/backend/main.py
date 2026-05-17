@@ -14,6 +14,7 @@ from config import settings
 from database import create_db_and_tables, seed_operators, seed_settings
 from routers import auth, alerts, drones, settings as settings_router, health, cameras, security
 from routers import detection as detection_router
+from bridges.sentinel import sentinel_bridge
 
 # Configure logging
 logging.basicConfig(
@@ -24,6 +25,8 @@ logging.basicConfig(
 
 
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
+logger = logging.getLogger("bsc.main")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,9 +37,9 @@ async def lifespan(app: FastAPI):
     seed_settings()
     print("Database ready.")
 
-    # Start drone telemetry background broadcast loop
-    task = asyncio.create_task(drones.telemetry_broadcast_loop())
-    print(f"Drone telemetry broadcast started (interval={settings.DRONE_TELEMETRY_INTERVAL}s).")
+    # Start Sentinel Bridge (External Mobile Alerting - Dedicated Thread)
+    sentinel_bridge.start_dedicated()
+    print(f"Sentinel Bridge started in background thread (Target: {settings.SENTINEL_WS_URL}).")
 
     # ── Start AI Detection Engine ──
     from ai.engine import detection_engine
@@ -67,12 +70,13 @@ async def lifespan(app: FastAPI):
                 # Enrich with AI descriptions for the UI
                 alert_dict = db_alert.model_dump()
                 alert_dict["id"] = db_alert.id
+                alert_dict["timestamp"] = db_alert.timestamp.isoformat()
                 alert_dict["ai_description"] = alert_event.description
                 alert_dict["ai_severity"] = alert_event.severity
                 alert_dict["ai_detections"] = alert_event.detections
                 
                 # Broadcast via SSE (Live Dashboard)
-                await alert_broadcast(alert_dict)
+                alert_broadcast(alert_dict)
                 logger.info(f"[{alert_event.camera_id}] AI ALERT DISPATCHED: {alert_event.threat}")
         except Exception as e:
             logger.error(f"Error bridging AI alert: {e}")
@@ -81,12 +85,16 @@ async def lifespan(app: FastAPI):
     detection_engine.set_alert_callback(on_ai_alert, asyncio.get_event_loop())
     detection_engine.start()
 
+    # Auto-register ESP32 camera CAM-01 permanently on startup for instant AI processing
+    detection_engine.add_camera("CAM-01", "http://10.227.1.96", "ALPHA")
+    logger.info("Permanently connected ESP32 CAM-01 (http://10.227.1.96) for AI processing.")
+
     yield
 
     # ── Shutdown ──
     print("Shutting down...")
-    task.cancel()
     detection_engine.stop()
+    sentinel_bridge.stop()  # Cleanly drain the bridge queue and close WS
 
 
 # ─── App Instance ─────────────────────────────────────────────────────────────

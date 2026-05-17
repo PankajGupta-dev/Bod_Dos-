@@ -8,6 +8,7 @@ Alerts router
 """
 import asyncio
 import json
+import logging
 from datetime import datetime
 from typing import AsyncGenerator
 
@@ -20,18 +21,29 @@ from dependencies import get_current_operator
 from schemas import AlertCreate, AlertRead, AcknowledgeRequest
 
 router = APIRouter(tags=["alerts"])
+logger = logging.getLogger("bsc.alerts")
+
+# Import bridge for mobile notifications
+from bridges.sentinel import sentinel_bridge
 
 # ─── In-memory SSE subscriber queues ─────────────────────────────────────────
 _subscribers: list[asyncio.Queue] = []
 
 
 def _broadcast(alert_dict: dict):
-    """Push an alert to every active SSE subscriber."""
+    """Push an alert to every active SSE subscriber and the mobile bridge."""
+    # 1. Internal Web Dashboard (SSE)
     for q in _subscribers:
         try:
             q.put_nowait(alert_dict)
         except asyncio.QueueFull:
             pass  # slow consumer — skip
+            
+    # 2. External Mobile App (Sentinel Bridge)
+    try:
+        sentinel_bridge.emit_alert(alert_dict)
+    except Exception as e:
+        logger.error(f"Failed to forward alert to Sentinel Bridge: {e}")
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -124,12 +136,19 @@ async def _event_generator(queue: asyncio.Queue) -> AsyncGenerator[str, None]:
                 data = await asyncio.wait_for(
                     queue.get(), timeout=settings.SSE_HEARTBEAT
                 )
-                yield f"event: alert\ndata: {json.dumps(data)}\n\n"
+                try:
+                    payload = json.dumps(data)
+                    yield f"event: alert\ndata: {payload}\n\n"
+                except (TypeError, ValueError) as e:
+                    logger.error(f"SSE serialization error: {e}")
+                    continue
             except asyncio.TimeoutError:
                 # Heartbeat to keep the connection alive
                 yield f"event: heartbeat\ndata: {json.dumps({'ts': datetime.utcnow().isoformat()})}\n\n"
     except asyncio.CancelledError:
         pass
+    except Exception as e:
+        logger.error(f"SSE generator error: {e}")
 
 
 @router.get("/stream")
@@ -142,9 +161,12 @@ async def alert_stream(_op=Depends(get_current_operator)):
     _subscribers.append(queue)
 
     async def cleanup():
-        async for chunk in _event_generator(queue):
-            yield chunk
-        _subscribers.remove(queue)
+        try:
+            async for chunk in _event_generator(queue):
+                yield chunk
+        finally:
+            if queue in _subscribers:
+                _subscribers.remove(queue)
 
     return StreamingResponse(
         cleanup(),
