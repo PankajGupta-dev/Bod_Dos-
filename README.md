@@ -1,16 +1,164 @@
-AI-Based Border Surveillance Using DronesAn autonomous, edge-AI powered aerial surveillance ecosystem designed to eliminate border blind spots, detect multi-tier security threats in real time, and securely log critical event data. Built by Team Circuit Forge from Kalyani Government Engineering College for Innovexa 2026.  📌 Project OverviewProject Title: AI-Based Border Surveillance Using Drones   Team Name: Circuit Forge   Track: Drone & Smart Surveillance Systems   Target Application: Defense, Border Security, and Restricted Zone Monitoring   The ProblemTraditional border infrastructure relies on static cameras and manual foot patrols. These systems introduce massive blind spots, fail in harsh environmental conditions, lack immediate real-time automated threat identification, and put human personnel at high risk in volatile zones.  Our SolutionInspired by covert, autonomous scout philosophy (similar to the stealth "Garud" drone concept seen in the film URI), this project delivers an intelligent aerial watchdog. Moving beyond simple remote control, the system uses on-board sensors and computer vision to automatically detect, geo-tag, and alert command hubs about border anomalies within 1–2 seconds.  ⚡ Core Features & CapabilitiesMulti-Threat AI Detection: Real-time identification of unauthorized human border crossers (infiltrators), suspicious vehicles, and spontaneous fire/smoke outbreaks.  Low-Latency Edge Processing: Low-latency video analytics optimized to run on low-power hardware.  Tamper-Proof Blockchain Logging: Critical alerts, metadata hashes, and event metrics are irreversibly committed to a local blockchain network to prevent internal tampering or data loss.  Tactical Night-Operations Aesthetic: Built with a specialized matte black finish. Unlike standard army-green which silhouettes sharply against daytime sky backdrops, the low-reflectivity black profile offers complete visual stealth during high-risk night and twilight missions.Real-time Central Command Dashboard: Built-in web portal showing live telemetry, data logs, and automated emergency action paths.  🛠️ Technology StackHardware & Prototype CoreMicrocontroller/Camera: ESP32-CAM (Baseline Prototype)   Edge AI Processor (Production Scale): NVIDIA Jetson Nano / Raspberry Pi   Sensors: Temperature, Smoke, and Gas modules   Communications: MQTT Protocol & Wi-Fi networks   AI & Computer VisionLanguage: Python   Frameworks: OpenCV & NumPy   Object Detection Model: YOLOv5 / YOLOv8   Software, Cloud & SecurityWeb Frontend: React.js, Tailwind CSS, Redux, Socket.IO Client   Mobile App: Flutter & Dart   Backend Server: Node.js, Express.js, JWT Authentication   Database: MongoDB (NoSQL logging)   Blockchain Infrastructure: Solidity Smart Contracts, Ethereum Network, Ganache   Cloud & Deployment: AWS (EC2, S3), Docker Containerization, Nginx   🏗️ System Architecture & Workflow[ Perception Layer: Sensors & Drone Camera ]
-                  │
-                  ▼ (Via MQTT / Wi-Fi)
-[ Network Layer: Secured Data Transmission ]
-                  │
-                  ▼
-[ Processing Layer: Edge Processing via YOLOv8 & OpenCV ]
-                  │
-         ┌────────┴────────┐
-         ▼ Threat?         ▼ No
-     [ YES ]           [ Continue Monitoring ]
-         │
-         ├──► [ Application Layer: Web Dashboard & Instant Alerts ]
-         │
-         └──► [ Data Layer: Immutable Blockchain Ledger Storage ]
-Data Collection: Onboard drone sensors track environmental factors while the camera records live video.  Analysis: Video frames are scanned locally on the edge processor to isolate fire, smoke, vehicles, or humans.  Alerting: If anomalies breach a set confidence threshold, encrypted warnings push directly to the React monitoring desk and Flutter mobile app.  Security Log: The system writes the unique threat signature hash, location coordinates, and timestamp securely onto the local blockchain ledger.  ⚖️ Governance, Prerequisites & Production RealitiesDeploying tactical defense equipment inside national borders demands explicit structural compliance.Licensing & Legal Process (India Ecosystem)Transitioning this device from prototype to production requires verification across Indian aviation and defense authorities:DGCA Clearance: Registration to receive a Unique Identification Number (UIN) and integration of No Permission, No Takeoff (NPNT) compliant firmware frameworks.Strategic Ministry Clearances: Operational certification from the Ministry of Home Affairs (MHA) and Ministry of Defence for deployment along sensitive territorial boundaries.Military Testing Grounds: Rigorous field evaluation inside authorized test environments (such as DRDO testing facilities) to verify resistance to signal jammer tech and electronic warfare countermeasures.Projected Commercial CostLab Prototype Cost: Minimal, leveraging highly accessible development boards like the ESP32-CAM.  Target Market Price (Fully Scaled): Estimated between ₹1.5 Lakhs to ₹2.5 Lakhs ($1,800 - $3,000 USD) per unit. This includes carbon-fiber ruggedization, a thermal/night-vision sensor upgrade, and long-range communication relays, remaining highly competitive against foreign imports.👥 Team Circuit ForgeArchita Chakraborty   Ayan Pal   Govind Raj Gupta   Pankaj Kumar Gupta   Rupanjan Saha   Srijita Misra   Developed for Innovexa 2026 — Powered by SurTech & JIS Group.  
+# 🚁 AI-Based Border Surveillance Using Drones
+
+> An autonomous, edge-AI powered aerial surveillance system that eliminates border blind spots, detects threats in real time, and logs critical event data on a tamper-proof blockchain ledger.
+
+**Team:** Circuit Forge | **College:** Kalyani Government Engineering College | **Event:** Innovexa 2026
+**Track:** Drone & Smart Surveillance Systems | **Domain:** Defense, Border Security & Restricted Zone Monitoring
+
+---
+
+## 📋 Table of Contents
+
+- [The Problem](#the-problem)
+- [Our Solution](#our-solution)
+- [Key Features](#key-features)
+- [Tech Stack](#tech-stack)
+- [System Architecture](#system-architecture)
+- [How It Works](#how-it-works)
+- [Compliance & Legal Requirements](#compliance--legal-requirements)
+- [Estimated Cost](#estimated-cost)
+- [Team](#team)
+
+---
+
+## The Problem
+
+Traditional border infrastructure has critical gaps:
+
+- **Static cameras** create massive blind spots with no dynamic coverage
+- **Manual foot patrols** put human personnel at high risk in volatile zones
+- Systems **fail in harsh environmental conditions** (night, fog, extreme weather)
+- No **real-time automated threat identification** — human operators must monitor feeds constantly
+- **No tamper-proof audit trail** for security events
+
+---
+
+## Our Solution
+
+Inspired by the autonomous scout philosophy (similar to the stealth "Garud" drone concept from the film *URI*), this project delivers an **intelligent aerial watchdog**.
+
+Instead of simple remote control, the drone uses onboard sensors and computer vision to **automatically detect, geo-tag, and alert command hubs** about border anomalies within **1–2 seconds** — without any human in the loop.
+
+The drone is built with a **matte black finish** for visual stealth during night and twilight missions. Unlike standard army-green which silhouettes sharply against daytime sky backdrops, the low-reflectivity black profile minimizes detection risk.
+
+---
+
+## Key Features
+
+| Feature | Description |
+|---|---|
+| 🎯 **Multi-Threat AI Detection** | Identifies unauthorized human crossers, suspicious vehicles, and fire/smoke outbreaks in real time |
+| ⚡ **Low-Latency Edge Processing** | Video analytics run directly on the drone's onboard hardware — no cloud round-trip needed |
+| 🔗 **Blockchain Event Logging** | Threat hashes, GPS coordinates, and timestamps are irreversibly committed to a local blockchain — tamper-proof by design |
+| 📡 **Real-Time Command Dashboard** | Web portal with live telemetry, event logs, and automated emergency action paths |
+| 📱 **Mobile Alerts** | Instant push notifications to a Flutter mobile app when threats are detected |
+| 🌙 **Night Operations Ready** | Matte black stealth finish optimized for low-visibility missions |
+
+---
+
+## Tech Stack
+
+### Hardware
+
+| Component | Choice |
+|---|---|
+| Camera / Microcontroller | ESP32-CAM (prototype) |
+| Edge AI Processor (production) | NVIDIA Jetson Nano / Raspberry Pi |
+| Sensors | Temperature, Smoke, Gas modules |
+| Communication | MQTT Protocol over Wi-Fi |
+
+### AI & Computer Vision
+
+- **Language:** Python
+- **Libraries:** OpenCV, NumPy
+- **Object Detection Model:** YOLOv5 / YOLOv8
+
+### Software & Backend
+
+| Layer | Technologies |
+|---|---|
+| Web Frontend | React.js, Tailwind CSS, Redux, Socket.IO |
+| Mobile App | Flutter & Dart |
+| Backend API | Node.js, Express.js, JWT Auth |
+| Database | MongoDB |
+| Blockchain | Solidity Smart Contracts, Ethereum, Ganache |
+| Cloud & Deployment | AWS (EC2, S3), Docker, Nginx |
+
+---
+
+## System Architecture
+
+```
+[ Drone: Sensors + Camera ]
+          │
+          ▼  (MQTT / Wi-Fi)
+[ Secured Data Transmission ]
+          │
+          ▼
+[ Edge Processor: YOLOv8 + OpenCV ]
+          │
+     ┌────┴────┐
+     ▼         ▼
+ Threat?    No Threat
+     │           │
+     │           └──► Continue Monitoring
+     │
+     ├──► [ Web Dashboard + Mobile Alerts ]
+     │
+     └──► [ Blockchain Ledger (Immutable Log) ]
+```
+
+---
+
+## How It Works
+
+1. **Collect** — Onboard sensors track environmental factors (temperature, smoke, gas) while the camera records live video.
+
+2. **Analyze** — Video frames are processed locally on the edge processor. YOLOv8 scans each frame for fire, smoke, vehicles, or humans.
+
+3. **Alert** — If a detected object crosses the confidence threshold, an encrypted alert is pushed instantly to the React web dashboard and Flutter mobile app.
+
+4. **Log** — The event's threat signature hash, GPS coordinates, and timestamp are written to the local blockchain ledger — permanently and tamper-proof.
+
+---
+
+## Compliance & Legal Requirements
+
+Deploying tactical defense drones inside national borders requires clearances across multiple Indian authorities:
+
+| Authority | Requirement |
+|---|---|
+| **DGCA** | Drone registration for a Unique Identification Number (UIN); NPNT-compliant firmware |
+| **Ministry of Home Affairs (MHA)** | Operational certification for deployment near sensitive borders |
+| **Ministry of Defence** | Clearance for use along territorial boundaries |
+| **DRDO Test Facilities** | Field evaluation to verify resistance to signal jammers and electronic warfare |
+
+---
+
+## Estimated Cost
+
+| Stage | Estimated Cost |
+|---|---|
+| Lab Prototype | Minimal (ESP32-CAM + off-the-shelf dev boards) |
+| Production Unit | ₹1.5L – ₹2.5L (~$1,800 – $3,000 USD) |
+
+The production price includes carbon-fibre ruggedization, thermal/night-vision sensor upgrades, and long-range communication relays — remaining competitive against foreign imports.
+
+---
+
+## Team
+
+**Circuit Forge** — Kalyani Government Engineering College
+
+| Name |
+|---|
+| Archita Chakraborty |
+| Ayan Pal |
+| Govind Raj Gupta |
+| Pankaj Kumar Gupta |
+| Rupanjan Saha |
+| Srijita Misra |
+
+---
+
+*Developed for Innovexa 2026 — Powered by SurTech & JIS Group.*
